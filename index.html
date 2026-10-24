@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Firebase Push Notification Test</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      max-width: 640px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #f5f7fb;
+      color: #222;
+    }
+    h1 { color: #1a73e8; font-size: 24px; }
+    .card {
+      background: #fff;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    button {
+      background: #1a73e8;
+      color: #fff;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 6px;
+      font-size: 15px;
+      cursor: pointer;
+      margin-right: 8px;
+      margin-top: 8px;
+    }
+    button:hover { background: #1558b0; }
+    button:disabled { background: #aaa; cursor: not-allowed; }
+    button.secondary { background: #34a853; }
+    button.secondary:hover { background: #2a8043; }
+    textarea {
+      width: 100%;
+      min-height: 80px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 13px;
+      resize: vertical;
+    }
+    .status {
+      padding: 10px;
+      border-radius: 6px;
+      margin-top: 12px;
+      font-size: 14px;
+    }
+    .status.success { background: #e6f4ea; color: #137333; }
+    .status.error   { background: #fce8e6; color: #c5221f; }
+    .status.info    { background: #e8f0fe; color: #1967d2; }
+    label { font-weight: 600; display: block; margin-top: 12px; }
+    .small { font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <h1>🔔 Firebase Push Notification Test</h1>
+
+  <!-- Step 1: Permission -->
+  <div class="card">
+    <h3>Step 1 — Notification Permission</h3>
+    <button id="enableBtn">Enable Notifications</button>
+    <div id="status1" class="status info">Permission not requested yet.</div>
+  </div>
+
+  <!-- Step 2: FCM Token -->
+  <div class="card">
+    <h3>Step 2 — Your FCM Token</h3>
+    <textarea id="tokenBox" readonly placeholder="Your FCM token will appear here after enabling notifications..."></textarea>
+    <button id="copyBtn">📋 Copy Token</button>
+    <p class="small">এই token টি Firebase Console → Cloud Messaging → Send Test Message এ ব্যবহার করুন।</p>
+  </div>
+
+  <!-- Step 3: Foreground messages -->
+  <div class="card">
+    <h3>Step 3 — Foreground Messages</h3>
+    <p class="small">যখন tab খোলা থাকবে, message এখানে দেখাবে। Tab বন্ধ থাকলে system notification আসবে।</p>
+    <div id="log" class="status info">No messages yet.</div>
+  </div>
+
+  <!-- Firebase SDK -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getMessaging, getToken, onMessage } 
+      from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
+
+    // ⚠️ এখানে আপনার Firebase config বসান
+    const firebaseConfig = {
+  apiKey: "AIzaSyDSw3vJtflbE69f9cBzgYGGoVENcHAlkRc",
+  authDomain: "push-notification-300ec.firebaseapp.com",
+  projectId: "push-notification-300ec",
+  storageBucket: "push-notification-300ec.firebasestorage.app",
+  messagingSenderId: "272847679695",
+  appId: "1:272847679695:web:fcd1962d98d39ea61287ba",
+  measurementId: "G-DD1JRXYH38"
+};
+
+    // ⚠️ VAPID Public Key (Project Settings → Cloud Messaging → Web Push certificates)
+    const VAPID_KEY = "push-notification-300ec";
+
+    const app = initializeApp(firebaseConfig);
+    const messaging = getMessaging(app);
+
+    const enableBtn = document.getElementById('enableBtn');
+    const copyBtn   = document.getElementById('copyBtn');
+    const tokenBox  = document.getElementById('tokenBox');
+    const status1   = document.getElementById('status1');
+    const log       = document.getElementById('log');
+
+    function setStatus(el, text, type = 'info') {
+      el.textContent = text;
+      el.className = 'status ' + type;
+    }
+
+    // Register service worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/firebase-messaging-sw.js')
+        .then(reg => console.log('SW registered:', reg.scope))
+        .catch(err => console.error('SW registration failed:', err));
+    } else {
+      setStatus(status1, '❌ Service Worker not supported in this browser.', 'error');
+    }
+
+    // Enable notifications
+    enableBtn.onclick = async () => {
+      try {
+        setStatus(status1, '⏳ Requesting permission...', 'info');
+
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+          setStatus(status1, '❌ Notification permission denied.', 'error');
+          return;
+        }
+
+        const token = await getToken(messaging, { vapidKey: VAPID_KEY });
+
+        if (token) {
+          tokenBox.value = token;
+          setStatus(status1, '✅ Notifications enabled & token generated!', 'success');
+          enableBtn.disabled = true;
+          enableBtn.textContent = 'Enabled ✓';
+          console.log('FCM Token:', token);
+        } else {
+          setStatus(status1, '⚠️ No token received. Check VAPID key.', 'error');
+        }
+      } catch (err) {
+        console.error(err);
+        setStatus(status1, '❌ Error: ' + err.message, 'error');
+      }
+    };
+
+    // Copy token
+    copyBtn.onclick = () => {
+      if (!tokenBox.value) return;
+      navigator.clipboard.writeText(tokenBox.value)
+        .then(() => setStatus(log, '📋 Token copied to clipboard!', 'success'));
+    };
+
+    // Foreground message handler
+    onMessage(messaging, (payload) => {
+      console.log('Foreground message:', payload);
+      const title = payload.notification?.title || '(no title)';
+      const body  = payload.notification?.body  || '(no body)';
+      setStatus(log, `📩 ${title} — ${body}`, 'success');
+
+      // Optional: show browser notification even in foreground
+      if (Notification.permission === 'granted') {
+        new Notification(title, { body, icon: '/icon.png' });
+      }
+    });
+  </script>
+</body>
+  </html>
